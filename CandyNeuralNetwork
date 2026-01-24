@@ -1,0 +1,68 @@
+import tensorflow
+import cv2 as cv
+import numpy as np
+
+if False:  # True if training
+    model = tensorflow.keras.models.Sequential([
+        tensorflow.keras.layers.Input(shape=(128, 128, 3)),
+
+        tensorflow.keras.layers.Conv2D(16, (3, 3), activation='relu'),
+        tensorflow.keras.layers.MaxPooling2D((2, 2)),
+
+        tensorflow.keras.layers.Conv2D(32, (3, 3), activation='relu'),
+        tensorflow.keras.layers.MaxPooling2D((2, 2)),
+
+        tensorflow.keras.layers.Conv2D(64, (3, 3), activation='relu'),
+        tensorflow.keras.layers.MaxPooling2D((2, 2)),
+
+        tensorflow.keras.layers.Flatten(),
+        tensorflow.keras.layers.Dense(128, activation='relu'),
+        tensorflow.keras.layers.Dense(3, activation='softmax')
+    ])
+
+    model.compile(optimizer='adam',
+                loss='sparse_categorical_crossentropy',
+                    metrics=['accuracy'])
+
+    train_data = tensorflow.keras.preprocessing.image_dataset_from_directory(
+        "C:\\Users\\Matthew Walters\\Downloads\\Training_Data",
+        image_size=(128, 128),
+        batch_size=1,
+        shuffle=True
+    )
+
+
+    history = model.fit(
+        train_data,
+        epochs=10
+    )
+
+    model.save("DNN_4_Candy_Model.keras")
+
+
+model = tensorflow.keras.models.load_model("DNN_4_Candy_Model.keras")
+
+classes = ["good", "bad", "ugly"]
+
+def predict_image(image_path):
+    img = cv.cvtColor(cv.imread(image_path), cv.COLOR_BGR2RGB)
+    img_resized = cv.resize(img, (128, 128))
+    img_array = np.expand_dims(img_resized, axis=0)  # Add batch dimension
+
+    predictions = model.predict(img_array)
+    predicted_class = np.argmax(predictions, axis=1)[0]
+    return classes[predicted_class], predictions[0][predicted_class]
+
+
+test_images = [
+    "C:\\Users\\Matthew Walters\\Downloads\\Test_Images\\Good\\Good.jpg",
+    "C:\\Users\\Matthew Walters\\Downloads\\Test_Images\\Bad\\Bad.jpg",
+    "C:\\Users\\Matthew Walters\\Downloads\\Test_Images\\Ugly\\Ugly.jpg"]
+
+for img_path in test_images:
+    label, confidence = predict_image(img_path)
+    print(f"Image: {img_path} => Predicted: {label} (Confidence: {confidence:.2f})")
+    img = cv.imread(img_path)
+    cv.imshow("Test Image", img)
+    cv.waitKey(0)
+cv.destroyAllWindows()
