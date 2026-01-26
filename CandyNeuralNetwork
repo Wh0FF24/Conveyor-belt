@@ -1,8 +1,21 @@
 import tensorflow
 import cv2 as cv
 import numpy as np
+import os
+from pathlib import Path
 
-if False:  # True if training
+# Get the directory where this script is located
+SCRIPT_DIR = Path(__file__).parent
+TRAINING_DATA_DIR = SCRIPT_DIR / "Training_Data"
+MODEL_PATH = SCRIPT_DIR / "DNN_4_Candy_Model.keras"
+
+# Set to True to train a new model, False to load existing model
+TRAINING_MODE = True
+
+if TRAINING_MODE:
+    print("Training mode enabled...")
+    print(f"Looking for training data in: {TRAINING_DATA_DIR}")
+    
     model = tensorflow.keras.models.Sequential([
         tensorflow.keras.layers.Input(shape=(128, 128, 3)),
 
@@ -25,24 +38,26 @@ if False:  # True if training
                     metrics=['accuracy'])
 
     train_data = tensorflow.keras.preprocessing.image_dataset_from_directory(
-        "C:\\Users\\Matthew Walters\\Downloads\\Training_Data",
+        str(TRAINING_DATA_DIR),
         image_size=(128, 128),
-        batch_size=1,
+        batch_size=32,
         shuffle=True
     )
-
 
     history = model.fit(
         train_data,
         epochs=10
     )
 
-    model.save("DNN_4_Candy_Model.keras")
+    model.save(str(MODEL_PATH))
+    print(f"Model saved to: {MODEL_PATH}")
 
+else:
+    print(f"Loading model from: {MODEL_PATH}")
+    model = tensorflow.keras.models.load_model(str(MODEL_PATH))
 
-model = tensorflow.keras.models.load_model("DNN_4_Candy_Model.keras")
-
-classes = ["good", "bad", "ugly"]
+# Classes match folder names (alphabetical order used by image_dataset_from_directory)
+classes = ["Bad", "Good", "Ugly"]
 
 def predict_image(image_path):
     img = cv.cvtColor(cv.imread(image_path), cv.COLOR_BGR2RGB)
@@ -54,15 +69,113 @@ def predict_image(image_path):
     return classes[predicted_class], predictions[0][predicted_class]
 
 
-test_images = [
-    "C:\\Users\\Matthew Walters\\Downloads\\Test_Images\\Good\\Good.jpg",
-    "C:\\Users\\Matthew Walters\\Downloads\\Test_Images\\Bad\\Bad.jpg",
-    "C:\\Users\\Matthew Walters\\Downloads\\Test_Images\\Ugly\\Ugly.jpg"]
+# Test with sample images from each category
+def get_sample_images(num_per_class=1):
+    """Get sample JPG images from each class folder for testing"""
+    test_images = []
+    for class_name in ["Good", "Bad", "Ugly"]:
+        class_dir = TRAINING_DATA_DIR / class_name
+        if class_dir.exists():
+            jpg_files = list(class_dir.glob("*.jpg")) + list(class_dir.glob("*.JPG"))
+            if jpg_files:
+                test_images.extend(jpg_files[:num_per_class])
+    return test_images
 
-for img_path in test_images:
-    label, confidence = predict_image(img_path)
-    print(f"Image: {img_path} => Predicted: {label} (Confidence: {confidence:.2f})")
-    img = cv.imread(img_path)
-    cv.imshow("Test Image", img)
-    cv.waitKey(0)
-cv.destroyAllWindows()
+
+def run_thorough_test(num_per_class=20):
+    """Run a thorough test on multiple images from each class"""
+    print("\n" + "="*60)
+    print("THOROUGH MODEL TESTING")
+    print("="*60)
+    
+    results = {"Good": {"correct": 0, "total": 0, "predictions": []},
+               "Bad": {"correct": 0, "total": 0, "predictions": []},
+               "Ugly": {"correct": 0, "total": 0, "predictions": []}}
+    
+    for class_name in ["Good", "Bad", "Ugly"]:
+        class_dir = TRAINING_DATA_DIR / class_name
+        if not class_dir.exists():
+            continue
+        
+        jpg_files = sorted(list(class_dir.glob("*.jpg")))
+        # Test every Nth image to spread across the dataset
+        step = max(1, len(jpg_files) // num_per_class)
+        test_files = jpg_files[::step][:num_per_class]
+        
+        print(f"\nTesting {len(test_files)} images from {class_name} folder...")
+        
+        for img_path in test_files:
+            predicted_label, confidence = predict_image(str(img_path))
+            is_correct = predicted_label == class_name
+            results[class_name]["total"] += 1
+            if is_correct:
+                results[class_name]["correct"] += 1
+            results[class_name]["predictions"].append({
+                "file": img_path.name,
+                "predicted": predicted_label,
+                "confidence": confidence,
+                "correct": is_correct
+            })
+    
+    # Print summary
+    print("\n" + "="*60)
+    print("TEST RESULTS SUMMARY")
+    print("="*60)
+    
+    total_correct = 0
+    total_tested = 0
+    
+    for class_name in ["Good", "Bad", "Ugly"]:
+        r = results[class_name]
+        accuracy = (r["correct"] / r["total"] * 100) if r["total"] > 0 else 0
+        total_correct += r["correct"]
+        total_tested += r["total"]
+        print(f"\n{class_name}:")
+        print(f"  Accuracy: {r['correct']}/{r['total']} ({accuracy:.1f}%)")
+        
+        # Show misclassified images
+        misclassified = [p for p in r["predictions"] if not p["correct"]]
+        if misclassified:
+            print(f"  Misclassified:")
+            for m in misclassified[:5]:  # Show up to 5
+                print(f"    {m['file']} -> {m['predicted']} ({m['confidence']:.2f})")
+    
+    overall_accuracy = (total_correct / total_tested * 100) if total_tested > 0 else 0
+    print(f"\n{'='*60}")
+    print(f"OVERALL ACCURACY: {total_correct}/{total_tested} ({overall_accuracy:.1f}%)")
+    print(f"{'='*60}")
+    
+    return results
+
+
+if __name__ == "__main__":
+    # Run thorough test
+    results = run_thorough_test(num_per_class=30)
+    
+    # Optional: show a few sample images
+    print("\n\nShowing sample images (press any key to continue, 'q' to quit)...")
+    test_images = get_sample_images(num_per_class=2)
+    
+    if not test_images:
+        print("\nNo JPG images found for testing!")
+        print("Please run convert_heic_to_jpg.py first to convert your HEIC images.")
+    else:
+        for img_path in test_images:
+            label, confidence = predict_image(str(img_path))
+            print(f"Image: {img_path.name} => Predicted: {label} (Confidence: {confidence:.2f})")
+            img = cv.imread(str(img_path))
+            
+            # Resize image to fit screen (max 800 pixels height)
+            h, w = img.shape[:2]
+            max_height = 800
+            if h > max_height:
+                scale = max_height / h
+                new_w = int(w * scale)
+                new_h = int(h * scale)
+                img = cv.resize(img, (new_w, new_h))
+            
+            cv.imshow(f"Predicted: {label} ({confidence:.0%}) - {img_path.name}", img)
+            key = cv.waitKey(0)
+            if key == ord('q'):
+                break
+        cv.destroyAllWindows()
